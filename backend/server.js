@@ -1,30 +1,23 @@
 const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
+const setupChat = require("./sockets/chat");
+const messageRoutes = require("./routes/messageRoutes");
+
 const PORT = 3000;
 
 const app = express();
+app.use(express.json());
+
+app.use("/api/messages", messageRoutes);
+
 const server = http.createServer(app);
+
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: { origin: "*" },
 });
 
-io.on("connection", (socket) => {
-  console.log("User connected");
-
-  socket.on("join_room", (roomId) => {
-    socket.join(roomId);
-  });
-
-  socket.on("send_message", async (data) => {
-    // Save to DB later
-    io.to(data.roomId).emit("receive_message", data);
-  });
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected");
-  });
-});
+setupChat(io);
 
 server.listen(PORT, () => {
   console.log(`Server running at ${PORT}`);

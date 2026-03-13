@@ -45,7 +45,7 @@ const corsOptions = {
   credentials: true,
 };
 
-app.options("*", cors(corsOptions)); // handle all preflight requests
+app.options("/{*path}", cors(corsOptions)); // handle all preflight requests
 app.use(cors(corsOptions));
 app.use(express.json({ limit: "1mb" }));
 

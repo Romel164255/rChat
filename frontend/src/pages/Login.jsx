@@ -15,7 +15,7 @@ export default function Login({ onConfirmation }) {
     setError(""); setLoading(true);
     try {
       if (!window.recaptchaVerifier) {
-        window.recaptchaVerifier = new RecaptchaVerifier(auth, recaptchaRef.current, { size: "invisible" });
+        window.recaptchaVerifier = new RecaptchaVerifier(auth, recaptchaRef.current, { size: "normal" });
         await window.recaptchaVerifier.render();
       }
       const confirmation = await signInWithPhoneNumber(auth, trimmed, window.recaptchaVerifier);

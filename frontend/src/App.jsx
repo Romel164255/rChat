@@ -1,89 +1,70 @@
 import { useEffect, useState } from "react";
-import { socket } from "./socket";
+import Login from "./pages/Login";
+import VerifyOTP from "./pages/VerifyOTP";
+import SetUsername from "./pages/SetUsername";
+import Chat from "./pages/Chat";
+import api from "./services/api";
 
-function App() {
-  const [username, setUsername] = useState("");
-  const [room, setRoom] = useState("room1");
-  const [joined, setJoined] = useState(false);
+export default function App() {
 
-  const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState([]);
-
-  const joinRoom = () => {
-    if (!username) return;
-    socket.connect();
-    socket.emit("join_room", room);
-    setJoined(true);
-  };
+  const [token, setToken] = useState(localStorage.getItem("token"));
+  const [phone, setPhone] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [hasUsername, setHasUsername] = useState(false);
 
   useEffect(() => {
-    socket.on("load_messages", (data) => {
-      setMessages(data);
-    });
 
-    socket.on("receive_message", (data) => {
-      setMessages((prev) => [...prev, data]);
-    });
+    async function checkUser() {
 
-    return () => {
-      socket.off("load_messages");
-      socket.off("receive_message");
-    };
-  }, []);
+      if (!token) {
+        setLoading(false);
+        return;
+      }
 
-  const sendMessage = () => {
-    if (!message) return;
+      try {
 
-    socket.emit("send_message", {
-      roomId: room,
-      content: message,
-      sender: username,
-    });
+        const res = await api.get("/auth/me");
 
-    setMessage("");
-  };
+        if (res.data.username) {
+          setHasUsername(true);
+        }
 
-  if (!joined) {
+      } catch (err) {
+
+        localStorage.removeItem("token");
+        setToken(null);
+
+      }
+
+      setLoading(false);
+
+    }
+
+    checkUser();
+
+  }, [token]);
+
+  if (loading) return <div>Loading...</div>;
+
+  if (!token && !phone)
+    return <Login setPhone={setPhone} />;
+
+  if (!token && phone)
     return (
-      <div className="chat-container">
-        <div className="chat-header">Join Chat</div>
-        <div className="input-area">
-          <input
-            placeholder="Enter username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-          />
-          <button onClick={joinRoom}>Join</button>
-        </div>
-      </div>
+      <VerifyOTP
+        phone={phone}
+        onLogin={(token) => {
+          localStorage.setItem("token", token);
+          setToken(token);
+        }}
+      />
     );
-  }
 
-  return (
-    <div className="chat-container">
-      <div className="chat-header">
-        Room: {room} | User: {username}
-      </div>
+  if (!hasUsername)
+    return <SetUsername onDone={() => setHasUsername(true)} />;
 
-      <div className="messages">
-        {messages.map((msg) => (
-          <div key={msg.id} className="message">
-            <strong>{msg.sender}: </strong>
-            {msg.content}
-          </div>
-        ))}
-      </div>
-
-      <div className="input-area">
-        <input
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-          placeholder="Type a message..."
-        />
-        <button onClick={sendMessage}>Send</button>
-      </div>
-    </div>
-  );
+  return <Chat onLogout={() => {
+    localStorage.removeItem("token");
+    setToken(null);
+  }} />;
 }
-
-export default App;

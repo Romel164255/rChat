@@ -1,13 +1,25 @@
-const express = require("express");
+import express from "express";
+import {
+  sendMessage,
+  getMessages,
+  updateMessageStatus,
+  markConversationRead
+} from "../controllers/messageController.js";
+
+import { authMiddleware } from "../middleware/authMiddleware.js";
+
 const router = express.Router();
-const messageController = require("../controllers/messageController");
 
-router.get("/:roomId", async (req, res) => {
-  const messages =
-    await messageController.fetchRoomMessages(
-      req.params.roomId
-    );
-  res.json(messages);
-});
+/* =========================
+   MESSAGE ROUTES
+========================= */
 
-module.exports = router;
+router.post("/", authMiddleware, sendMessage);
+
+router.get("/:conversationId", authMiddleware, getMessages);
+
+router.post("/status", authMiddleware, updateMessageStatus);
+
+router.post("/:conversationId/read", authMiddleware, markConversationRead);
+
+export default router;

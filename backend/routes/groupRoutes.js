@@ -4,20 +4,16 @@ import {
   addGroupMember,
   removeGroupMember,
   promoteToAdmin,
-  getGroupMembers
+  getGroupMembers,
 } from "../controllers/groupController.js";
-
 import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
 router.post("/", authMiddleware, createGroup);
-router.post("/:conversationId/add", authMiddleware, addGroupMember);
-router.post("/:conversationId/remove", authMiddleware, removeGroupMember);
-router.post("/:conversationId/promote", authMiddleware, promoteToAdmin);
-
-/* new endpoint */
-
 router.get("/:conversationId/members", authMiddleware, getGroupMembers);
+router.post("/:conversationId/members", authMiddleware, addGroupMember);
+router.delete("/:conversationId/members", authMiddleware, removeGroupMember);
+router.post("/:conversationId/promote", authMiddleware, promoteToAdmin);
 
 export default router;

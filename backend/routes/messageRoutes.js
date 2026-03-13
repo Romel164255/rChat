@@ -3,23 +3,18 @@ import {
   sendMessage,
   getMessages,
   updateMessageStatus,
-  markConversationRead
+  markConversationRead,
 } from "../controllers/messageController.js";
-
 import { authMiddleware } from "../middleware/authMiddleware.js";
 
 const router = express.Router();
 
-/* =========================
-   MESSAGE ROUTES
-========================= */
-
-router.post("/", authMiddleware, sendMessage);
-
-router.get("/:conversationId", authMiddleware, getMessages);
-
+// Static routes MUST be declared before dynamic /:param routes
+// to prevent Express from matching "status" as a conversationId.
 router.post("/status", authMiddleware, updateMessageStatus);
 
+router.post("/", authMiddleware, sendMessage);
+router.get("/:conversationId", authMiddleware, getMessages);
 router.post("/:conversationId/read", authMiddleware, markConversationRead);
 
 export default router;

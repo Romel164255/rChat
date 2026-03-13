@@ -1,186 +1,202 @@
 import crypto from "crypto";
 import { pool } from "../db.js";
 
+const MAX_MESSAGE_LENGTH = 4000;
+const VALID_STATUSES = ["sent", "delivered", "read"];
+
+/* =========================
+   HELPER — verify membership
+========================= */
+
+async function isMember(userId, conversationId) {
+  const result = await pool.query(
+    `SELECT 1 FROM conversation_members
+     WHERE user_id = $1 AND conversation_id = $2`,
+    [userId, conversationId]
+  );
+  return result.rows.length > 0;
+}
+
 /* =========================
    SEND MESSAGE
 ========================= */
 
 export async function sendMessage(req, res) {
-
   try {
-
     const { conversation_id, content } = req.body;
 
     if (!conversation_id || !content) {
+      return res.status(400).json({ error: "conversation_id and content required" });
+    }
+
+    const trimmed = content.trim();
+
+    if (trimmed.length === 0) {
+      return res.status(400).json({ error: "Message cannot be empty" });
+    }
+
+    if (trimmed.length > MAX_MESSAGE_LENGTH) {
       return res.status(400).json({
-        error: "conversation_id and content required"
+        error: `Message exceeds maximum length of ${MAX_MESSAGE_LENGTH} characters`,
       });
+    }
+
+    // Verify the sender is a member of this conversation
+    if (!(await isMember(req.user.id, conversation_id))) {
+      return res.status(403).json({ error: "Not a member of this conversation" });
     }
 
     const messageId = crypto.randomUUID();
 
     await pool.query(
-      `
-      INSERT INTO messages
-      (id, conversation_id, sender_id, content, status)
-      VALUES ($1,$2,$3,$4,'sent')
-      `,
-      [messageId, conversation_id, req.user.id, content]
+      `INSERT INTO messages (id, conversation_id, sender_id, content, status)
+       VALUES ($1, $2, $3, $4, 'sent')`,
+      [messageId, conversation_id, req.user.id, trimmed]
     );
 
-    res.json({
-      message: "Message sent",
-      id: messageId
-    });
+    // Fetch the full message row so the caller gets created_at etc.
+    const msgResult = await pool.query(
+      `SELECT id, conversation_id, sender_id, content, status, created_at
+       FROM messages WHERE id = $1`,
+      [messageId]
+    );
 
+    res.status(201).json(msgResult.rows[0]);
   } catch (err) {
-
-    console.error(err);
-
-    res.status(500).json({
-      error: "Server error"
-    });
-
+    console.error("sendMessage error:", err);
+    res.status(500).json({ error: "Server error" });
   }
-
 }
 
-
 /* =========================
-   GET MESSAGES
-   CURSOR PAGINATION
+   GET MESSAGES (cursor pagination)
 ========================= */
 
 export async function getMessages(req, res) {
-
   try {
-
     const { conversationId } = req.params;
 
-    const limit = parseInt(req.query.limit) || 20;
-    const before = req.query.before;
+    // Verify membership before returning messages
+    if (!(await isMember(req.user.id, conversationId))) {
+      return res.status(403).json({ error: "Not a member of this conversation" });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const before = req.query.before; // ISO timestamp cursor
 
     let result;
 
     if (!before) {
-
       result = await pool.query(
-        `
-        SELECT id, sender_id, content, status, created_at
-        FROM messages
-        WHERE conversation_id = $1
-        ORDER BY created_at DESC
-        LIMIT $2
-        `,
+        `SELECT id, sender_id, content, status, created_at
+         FROM messages
+         WHERE conversation_id = $1
+         ORDER BY created_at DESC
+         LIMIT $2`,
         [conversationId, limit]
       );
-
     } else {
-
       result = await pool.query(
-        `
-        SELECT id, sender_id, content, status, created_at
-        FROM messages
-        WHERE conversation_id = $1
-        AND created_at < $2
-        ORDER BY created_at DESC
-        LIMIT $3
-        `,
+        `SELECT id, sender_id, content, status, created_at
+         FROM messages
+         WHERE conversation_id = $1
+           AND created_at < $2
+         ORDER BY created_at DESC
+         LIMIT $3`,
         [conversationId, before, limit]
       );
-
     }
 
-    res.json(result.rows);
-
+    // Return oldest-first so the UI can append naturally
+    res.json(result.rows.reverse());
   } catch (err) {
-
-    console.error(err);
-
-    res.status(500).json({
-      error: "Server error"
-    });
-
+    console.error("getMessages error:", err);
+    res.status(500).json({ error: "Server error" });
   }
-
 }
-
 
 /* =========================
    UPDATE MESSAGE STATUS
 ========================= */
 
 export async function updateMessageStatus(req, res) {
-
   try {
-
     const { message_id, status } = req.body;
 
     if (!message_id || !status) {
+      return res.status(400).json({ error: "message_id and status required" });
+    }
+
+    if (!VALID_STATUSES.includes(status)) {
       return res.status(400).json({
-        error: "message_id and status required"
+        error: `status must be one of: ${VALID_STATUSES.join(", ")}`,
       });
     }
 
+    // Verify the message exists and the user is in the conversation
+    const msgResult = await pool.query(
+      `SELECT m.conversation_id FROM messages m
+       JOIN conversation_members cm
+         ON cm.conversation_id = m.conversation_id
+        AND cm.user_id = $1
+       WHERE m.id = $2`,
+      [req.user.id, message_id]
+    );
+
+    if (msgResult.rows.length === 0) {
+      return res.status(404).json({ error: "Message not found or access denied" });
+    }
+
     await pool.query(
-      `
-      UPDATE messages
-      SET status = $1
-      WHERE id = $2
-      `,
+      `UPDATE messages SET status = $1 WHERE id = $2`,
       [status, message_id]
     );
 
-    res.json({
-      message: "Status updated"
-    });
-
+    res.json({ message: "Status updated" });
   } catch (err) {
-
-    console.error(err);
-
-    res.status(500).json({
-      error: "Server error"
-    });
-
+    console.error("updateMessageStatus error:", err);
+    res.status(500).json({ error: "Server error" });
   }
-
 }
-
 
 /* =========================
    MARK CONVERSATION READ
 ========================= */
 
 export async function markConversationRead(req, res) {
-
   try {
-
     const { conversationId } = req.params;
     const { message_id } = req.body;
 
+    if (!message_id) {
+      return res.status(400).json({ error: "message_id required" });
+    }
+
+    // Verify membership
+    if (!(await isMember(req.user.id, conversationId))) {
+      return res.status(403).json({ error: "Not a member of this conversation" });
+    }
+
+    // Verify the message actually belongs to this conversation
+    const msgCheck = await pool.query(
+      `SELECT id FROM messages WHERE id = $1 AND conversation_id = $2`,
+      [message_id, conversationId]
+    );
+
+    if (msgCheck.rows.length === 0) {
+      return res.status(404).json({ error: "Message not found in this conversation" });
+    }
+
     await pool.query(
-      `
-      UPDATE conversation_members
-      SET last_read_message_id = $1
-      WHERE conversation_id = $2
-      AND user_id = $3
-      `,
+      `UPDATE conversation_members
+       SET last_read_message_id = $1
+       WHERE conversation_id = $2 AND user_id = $3`,
       [message_id, conversationId, req.user.id]
     );
 
-    res.json({
-      message: "Conversation marked as read"
-    });
-
+    res.json({ message: "Conversation marked as read" });
   } catch (err) {
-
-    console.error(err);
-
-    res.status(500).json({
-      error: "Server error"
-    });
-
+    console.error("markConversationRead error:", err);
+    res.status(500).json({ error: "Server error" });
   }
-
 }

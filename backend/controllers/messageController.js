@@ -54,10 +54,14 @@ export async function sendMessage(req, res) {
       [messageId, conversation_id, req.user.id, trimmed]
     );
 
-    // Fetch the full message row so the caller gets created_at etc.
+    // Fetch full message with sender info for the response
     const msgResult = await pool.query(
-      `SELECT id, conversation_id, sender_id, content, status, created_at
-       FROM messages WHERE id = $1`,
+      `SELECT m.id, m.conversation_id, m.sender_id, m.content, m.status, m.created_at,
+              u.username AS sender_username,
+              COALESCE(u.display_name, u.username) AS sender_name
+       FROM messages m
+       JOIN users u ON u.id = m.sender_id
+       WHERE m.id = $1`,
       [messageId]
     );
 
@@ -70,6 +74,7 @@ export async function sendMessage(req, res) {
 
 /* =========================
    GET MESSAGES (cursor pagination)
+   — includes sender name for group display
 ========================= */
 
 export async function getMessages(req, res) {
@@ -81,27 +86,31 @@ export async function getMessages(req, res) {
       return res.status(403).json({ error: "Not a member of this conversation" });
     }
 
-    const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+    const limit = Math.min(parseInt(req.query.limit) || 40, 100);
     const before = req.query.before; // ISO timestamp cursor
 
     let result;
 
     if (!before) {
       result = await pool.query(
-        `SELECT id, sender_id, content, status, created_at
-         FROM messages
-         WHERE conversation_id = $1
-         ORDER BY created_at DESC
+        `SELECT m.id, m.sender_id, m.content, m.status, m.created_at,
+                COALESCE(u.display_name, u.username) AS sender_name
+         FROM messages m
+         JOIN users u ON u.id = m.sender_id
+         WHERE m.conversation_id = $1
+         ORDER BY m.created_at DESC
          LIMIT $2`,
         [conversationId, limit]
       );
     } else {
       result = await pool.query(
-        `SELECT id, sender_id, content, status, created_at
-         FROM messages
-         WHERE conversation_id = $1
-           AND created_at < $2
-         ORDER BY created_at DESC
+        `SELECT m.id, m.sender_id, m.content, m.status, m.created_at,
+                COALESCE(u.display_name, u.username) AS sender_name
+         FROM messages m
+         JOIN users u ON u.id = m.sender_id
+         WHERE m.conversation_id = $1
+           AND m.created_at < $2
+         ORDER BY m.created_at DESC
          LIMIT $3`,
         [conversationId, before, limit]
       );
@@ -133,7 +142,6 @@ export async function updateMessageStatus(req, res) {
       });
     }
 
-    // Verify the message exists and the user is in the conversation
     const msgResult = await pool.query(
       `SELECT m.conversation_id FROM messages m
        JOIN conversation_members cm
@@ -172,12 +180,10 @@ export async function markConversationRead(req, res) {
       return res.status(400).json({ error: "message_id required" });
     }
 
-    // Verify membership
     if (!(await isMember(req.user.id, conversationId))) {
       return res.status(403).json({ error: "Not a member of this conversation" });
     }
 
-    // Verify the message actually belongs to this conversation
     const msgCheck = await pool.query(
       `SELECT id FROM messages WHERE id = $1 AND conversation_id = $2`,
       [message_id, conversationId]

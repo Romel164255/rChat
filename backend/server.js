@@ -12,6 +12,7 @@ import userRoutes from "./routes/userRoutes.js";
 import conversationRoutes from "./routes/conversationRoutes.js";
 import messageRoutes from "./routes/messageRoutes.js";
 import groupRoutes from "./routes/groupRoutes.js";
+import statsRoutes from "./routes/statsRoutes.js";
 
 dotenv.config();
 
@@ -79,6 +80,7 @@ app.use("/users", userRoutes);
 app.use("/conversations", conversationRoutes);
 app.use("/messages", messageRoutes);
 app.use("/groups", groupRoutes);
+app.use("/api", statsRoutes);
 
 app.get("/", (_req, res) => res.json({ status: "rChat API running" }));
 app.use((_req, res) => res.status(404).json({ error: "Route not found" }));

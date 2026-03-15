@@ -6,17 +6,21 @@ const router = express.Router();
 router.get("/stats", async (req, res) => {
   try {
 
-    const users = await pool.query("SELECT COUNT(*) FROM users");
-    const messages = await pool.query("SELECT COUNT(*) FROM messages");
-    const conversations = await pool.query("SELECT COUNT(*) FROM conversations");
-    const groups = await pool.query("SELECT COUNT(*) FROM groups");
+    const results = await Promise.allSettled([
+      pool.query("SELECT COUNT(*) FROM users"),
+      pool.query("SELECT COUNT(*) FROM messages"),
+      pool.query("SELECT COUNT(*) FROM conversations"),
+      pool.query("SELECT COUNT(*) FROM conversations WHERE is_group = true")
+    ]);
 
-    res.json({
-      users: users.rows[0].count,
-      messages: messages.rows[0].count,
-      conversations: conversations.rows[0].count,
-      groups: groups.rows[0].count
-    });
+    const stats = {
+      users: results[0].status === "fulfilled" ? results[0].value.rows[0].count : 0,
+      messages: results[1].status === "fulfilled" ? results[1].value.rows[0].count : 0,
+      conversations: results[2].status === "fulfilled" ? results[2].value.rows[0].count : 0,
+      groups: results[3].status === "fulfilled" ? results[3].value.rows[0].count : 0
+    };
+
+    res.json(stats);
 
   } catch (error) {
     console.error(error);

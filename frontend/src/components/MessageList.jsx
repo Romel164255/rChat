@@ -83,7 +83,15 @@ function MessageBubble({ msg, mine, showSender, isFirst, isLast, isGroup }) {
           </div>
         )}
 
-        <p style={s.text}>{msg.content}</p>
+        {msg.content?.startsWith("audio:") ? (
+          <audio
+            controls
+            src={msg.content.slice(6)}
+            style={s.audio}
+          />
+        ) : (
+          <p style={s.text}>{msg.content}</p>
+        )}
 
         <div style={s.meta}>
           <span style={s.time}>{timeFmt(msg.created_at)}</span>
@@ -308,6 +316,7 @@ const s = {
   bubble: { padding: "7px 10px 4px", wordBreak: "break-word", maxWidth: "100%" },
   senderName: { fontSize: 11.5, fontWeight: 700, marginBottom: 3, letterSpacing: "0.01em" },
   text: { fontSize: 14.5, lineHeight: 1.55, color: "var(--text-primary)", whiteSpace: "pre-wrap" },
+  audio: { display: "block", width: 240, maxWidth: "100%", marginTop: 2, accentColor: "var(--accent)" },
   meta: { display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 5, marginTop: 3 },
   time: { fontSize: 10.5, color: "var(--text-muted)" },
   typingWrap: { display: "flex", gap: 4, alignItems: "center", height: 16 },
